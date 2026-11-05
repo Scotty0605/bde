@@ -203,10 +203,15 @@
     if (/Invalid login credentials/i.test(m)) return "E-mail ou mot de passe incorrect.";
     if (/Email not confirmed/i.test(m)) return "Confirme d'abord ton adresse e-mail (lien reçu par mail).";
     if (/already registered/i.test(m)) return "Un compte existe déjà avec cette adresse.";
-    if (/Password should be/i.test(m)) return "Mot de passe trop court (8 caractères minimum).";
+    if (/Password should|weak[_ ]password|password.*(contain|length|characters)/i.test(m)) return PWD_RULE_ERR;
     if (/rate limit/i.test(m)) return "Trop de tentatives, réessaie dans quelques minutes.";
     return m;
   }
+
+  // Règle de mot de passe (doit correspondre au réglage Supabase : 10 caractères, minuscule, majuscule, chiffre)
+  const PWD_RULE_LABEL = "Mot de passe (10 caractères min., avec une majuscule, une minuscule et un chiffre)";
+  const PWD_RULE_ERR = "Mot de passe trop faible : il faut au moins 10 caractères, dont une majuscule, une minuscule et un chiffre.";
+  const strongEnough = (p) => p.length >= 10 && /[a-z]/.test(p) && /[A-Z]/.test(p) && /\d/.test(p);
 
   function openModal(build, onClose) {
     let closed = false;
@@ -515,13 +520,14 @@
     } else if (mode === "signup") {
       const name = h("input", { class: "input", required: true, maxlength: 60, autocomplete: "name", placeholder: "Prénom Nom" });
       const email = h("input", { class: "input", type: "email", required: true, autocomplete: "email" });
-      const pwd = h("input", { class: "input", type: "password", required: true, minlength: 8, autocomplete: "new-password" });
-      const pwd2 = h("input", { class: "input", type: "password", required: true, minlength: 8, autocomplete: "new-password" });
+      const pwd = h("input", { class: "input", type: "password", required: true, minlength: 10, autocomplete: "new-password" });
+      const pwd2 = h("input", { class: "input", type: "password", required: true, minlength: 10, autocomplete: "new-password" });
       const btn = h("button", { class: "btn primary", type: "submit" }, "Créer mon compte");
       form = h("form", {
         onsubmit: async (e) => {
           e.preventDefault(); setErr("");
           if (pwd.value !== pwd2.value) return setErr("Les deux mots de passe ne correspondent pas.");
+          if (!strongEnough(pwd.value)) return setErr(PWD_RULE_ERR);
           btn.disabled = true;
           const { data, error } = await sb.auth.signUp({
             email: email.value.trim(),
@@ -535,7 +541,7 @@
       },
         h("label", { class: "field" }, "Nom complet", name),
         h("label", { class: "field" }, "E-mail", email),
-        h("label", { class: "field" }, "Mot de passe (8 caractères min.)", pwd),
+        h("label", { class: "field" }, PWD_RULE_LABEL, pwd),
         h("label", { class: "field" }, "Confirmer le mot de passe", pwd2),
         err, btn,
         h("p", { class: "hint", style: { margin: 0 } },
@@ -571,7 +577,7 @@
   }
 
   function renderRecovery() {
-    const pwd = h("input", { class: "input", type: "password", required: true, minlength: 8, autocomplete: "new-password" });
+    const pwd = h("input", { class: "input", type: "password", required: true, minlength: 10, autocomplete: "new-password" });
     const err = h("div", { class: "error-text" });
     const btn = h("button", { class: "btn primary", type: "submit" }, "Enregistrer");
     appEl.replaceChildren(
@@ -580,7 +586,9 @@
           h("h2", null, "Nouveau mot de passe"),
           h("form", {
             onsubmit: async (e) => {
-              e.preventDefault(); btn.disabled = true;
+              e.preventDefault();
+              if (!strongEnough(pwd.value)) { err.textContent = PWD_RULE_ERR; return; }
+              btn.disabled = true;
               const { error } = await sb.auth.updateUser({ password: pwd.value });
               btn.disabled = false;
               if (error) { err.textContent = friendlyError(error); return; }
@@ -590,7 +598,7 @@
               S.loaded = false;
               onAuth("SIGNED_IN", data.session);
             },
-          }, h("label", { class: "field" }, "Mot de passe (8 caractères min.)", pwd), err, btn))));
+          }, h("label", { class: "field" }, PWD_RULE_LABEL, pwd), err, btn))));
   }
 
   // ------------------------------------------------------------------
