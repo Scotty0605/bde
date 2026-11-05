@@ -89,6 +89,9 @@
 
   // Droits (affichage uniquement — la base fait foi)
   const isAdmin = () => S.me?.global_role === "admin";
+  const isOwner = () => !!S.me?.is_owner;
+  // Nommer / retirer la présidence : le propriétaire (ou tout admin s'il n'y a pas de propriétaire)
+  const canManagePresidency = () => isOwner() || (isAdmin() && ![...S.profiles.values()].some((p) => p.is_owner));
   const seesAll = () => S.me?.global_role === "admin" || S.me?.global_role === "overview";
   const myRole = (poleId) => S.memberships.find((m) => m.user_id === S.user?.id && m.pole_id === poleId)?.role;
   const canView = (poleId) => seesAll() || !!myRole(poleId);
@@ -232,7 +235,7 @@
   async function loadAll() {
     const [poles, profiles, mems, tasks, events, posts, replies, votes, meetings, mfiles] = await Promise.all([
       sb.from("poles").select("*").order("sort").order("name"),
-      sb.from("profiles").select("id, full_name, title, global_role"),
+      sb.from("profiles").select("id, full_name, title, global_role, is_owner"),
       sb.from("memberships").select("*"),
       sb.from("tasks").select("*"),
       sb.from("events").select("*"),
@@ -1606,7 +1609,9 @@
       h("div", { class: "notice" },
         h("strong", null, "Rappel des rôles. "),
         "Présidence : voit et modifie tout. Vue d'ensemble : voit tout, sans rien modifier (idéal pour le secrétaire général). ",
-        "Responsable d'un pôle : crée et coche les tâches de ce pôle. Membre : lecture seule."),
+        "Responsable d'un pôle : crée et coche les tâches de ce pôle. Membre : lecture seule. ",
+        h("strong", null, "Seul le président (👑) peut nommer ou retirer un membre de la présidence"),
+        ", et personne ne peut modifier son profil."),
       h("div", { class: "section" }, h("h2", null, "Comptes"), usersBox),
       h("div", { class: "section" }, h("h2", null, "Pôles"), polesAdmin()));
   }
@@ -1614,10 +1619,13 @@
   function usersTable(users) {
     const rows = users.map((u) => {
       const mems = S.memberships.filter((m) => m.user_id === u.id);
-      const roleSel = h("select", { class: "input", value: u.global_role, style: { minWidth: "190px" } },
+      const presLock = !canManagePresidency();
+      const roleLocked = u.is_owner || (presLock && u.global_role === "admin");
+      const roleSel = h("select", { class: "input", value: u.global_role, style: { minWidth: "190px" }, disabled: roleLocked,
+        title: u.is_owner ? "Le président (propriétaire) garde toujours l'accès complet" : roleLocked ? "Seul le président peut retirer un membre de la présidence" : null },
         h("option", { value: "none" }, "Accès par pôle"),
         h("option", { value: "overview" }, "Vue d'ensemble (lecture)"),
-        h("option", { value: "admin" }, "Présidence (tout)"));
+        h("option", { value: "admin", disabled: presLock && u.global_role !== "admin" }, "Présidence (tout)"));
       roleSel.addEventListener("change", async () => {
         const v = roleSel.value;
         if (v === "admin") {
@@ -1630,7 +1638,8 @@
         if (u.id === S.user.id) render();
       });
 
-      const titleIn = h("input", { class: "input", value: u.title || "", placeholder: "Ex. Vice-président", maxlength: 60, style: { minWidth: "150px" } });
+      const titleIn = h("input", { class: "input", value: u.title || "", placeholder: "Ex. Vice-président", maxlength: 60, style: { minWidth: "150px" },
+        disabled: u.is_owner && u.id !== S.user.id });
       titleIn.addEventListener("change", async () => {
         const { error } = await sb.from("profiles").update({ title: titleIn.value.trim() || null }).eq("id", u.id);
         if (error) return toast(friendlyError(error), true);
@@ -1650,7 +1659,9 @@
       }, "Ajouter");
 
       return h("tr", null,
-        h("td", null, h("strong", null, u.full_name || "—"), h("div", { class: "muted" }, u.email),
+        h("td", null, h("strong", null, u.full_name || "—"),
+          u.is_owner && h("div", null, h("span", { class: "badge accent" }, "👑 Président · propriétaire")),
+          h("div", { class: "muted" }, u.email),
           h("div", { class: "muted" }, u.last_sign_in_at ? "Vu le " + fmtDateTime(u.last_sign_in_at) : "Jamais connecté")),
         h("td", null, roleSel),
         h("td", null, titleIn),

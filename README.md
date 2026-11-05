@@ -63,6 +63,17 @@ ou importe le dépôt sur Vercel / Netlify sans configuration particulière.
 
 3. Recharge le site : le menu **Administration** apparaît.
 
+Puis désigne-toi **propriétaire** (une seule fois) :
+
+```sql
+update public.profiles set is_owner = true
+ where id = (select id from auth.users where email = 'ton.email@exemple.fr');
+```
+
+Le propriétaire (👑) est le seul à pouvoir nommer ou retirer un membre de la présidence, et personne
+ne peut modifier son profil ni lui retirer son accès. Les vice-présidents gardent l'accès complet à tout
+le reste. Ce rôle ne se change que depuis Supabase (SQL Editor), jamais depuis le site.
+
 ### 4. Inviter le bureau
 
 Envoie le lien au bureau. Une fois inscrits, dans **Administration** :

@@ -93,6 +93,7 @@ a { color: var(--accent); }
   font-size: 15px; color: var(--ink);
 }
 textarea.input { min-height: 90px; resize: vertical; }
+.input:disabled { background: var(--surface-2); color: var(--ink-3); cursor: not-allowed; }
 .input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
 .hint { font-size: 13px; color: var(--ink-3); }
 .error-text { color: var(--danger); font-size: 14px; }
