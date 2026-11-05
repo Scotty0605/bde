@@ -708,7 +708,8 @@
       const pct = all.length ? Math.round((done / all.length) * 100) : 0;
       const n = polePeople(p.id).length;
       return h("button", { class: "pole-card", style: { "--c": p.color }, onclick: () => go("pole:" + p.id) },
-        h("div", { class: "row" }, h("h3", null, p.name), accessLabel(p.id) && h("span", { class: "badge" }, accessLabel(p.id))),
+        h("div", { class: "row" }, h("h3", null, p.name),
+          !isAdmin() && accessLabel(p.id) && h("span", { class: "badge" }, accessLabel(p.id))),
         h("div", { class: "progress" }, h("span", { style: { width: pct + "%" } })),
         h("div", { class: "row" },
           h("span", { class: "muted" }, all.length ? `${done}/${all.length} faites` : "Aucune tâche"),

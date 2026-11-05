@@ -181,10 +181,13 @@ textarea.input { min-height: 90px; resize: vertical; }
 .pole-card {
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 16px; cursor: pointer; text-align: left; display: grid; gap: 10px;
+  grid-template-columns: minmax(0, 1fr); min-width: 0; width: 100%; align-content: start;
   border-top: 3px solid var(--c, var(--accent));
 }
 .pole-card:hover { box-shadow: var(--shadow); }
-.pole-card .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.pole-card .row { display: flex; justify-content: space-between; align-items: center; gap: 6px 8px; flex-wrap: wrap; min-width: 0; }
+.pole-card h3 { min-width: 0; overflow-wrap: anywhere; }
+.pole-card .progress { width: 100%; }
 .progress { height: 6px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--c, var(--accent)); border-radius: 999px; }
 .muted { color: var(--ink-3); font-size: 13px; }
@@ -322,6 +325,9 @@ textarea.input.reply-input:focus { height: 84px; }
 .sync-grid { display: grid; gap: 8px; }
 .sync-grid .btn { justify-content: center; text-decoration: none; }
 @media (max-width: 520px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .pole-card { padding: 12px; gap: 8px; }
+  .pole-card h3 { font-size: 14px; }
   .meeting { grid-template-columns: 1fr; }
   .date-box { grid-auto-flow: column; justify-content: start; gap: 6px; padding: 6px 10px; align-items: baseline; width: max-content; }
   .date-box .dnum { font-size: 18px; }
