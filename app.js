@@ -80,6 +80,8 @@
     expanded: new Set(), // fils de réponses dépliés
     dFilter: "all",      // all | sondage | question
     seenAtOpen: "",
+    aal: "aal1",         // niveau de la session : aal2 = double authentification validée
+    nextAal: "aal1",
     pendingRender: false,
     view: "home",        // home | pole:<id> | events | discussions | account | admin
     filter: "todo",      // todo | done | all
@@ -92,10 +94,20 @@
   const isOwner = () => !!S.me?.is_owner;
   // Nommer / retirer la présidence : le propriétaire (ou tout admin s'il n'y a pas de propriétaire)
   const canManagePresidency = () => isOwner() || (isAdmin() && ![...S.profiles.values()].some((p) => p.is_owner));
-  const seesAll = () => S.me?.global_role === "admin" || S.me?.global_role === "overview";
+  const isOverview = () => S.me?.global_role === "overview";
+  const seesAll = () => isAdmin() || isOverview();
   const myRole = (poleId) => S.memberships.find((m) => m.user_id === S.user?.id && m.pole_id === poleId)?.role;
-  const canView = (poleId) => seesAll() || !!myRole(poleId);
-  const canEdit = (poleId) => isAdmin() || myRole(poleId) === "responsable";
+  const poleNeedsMfa = (poleId) => !!S.poles.find((p) => p.id === poleId)?.require_mfa;
+  const hasAal2 = () => S.aal === "aal2";
+  // Membre d'un pôle protégé par 2FA sans avoir saisi son code
+  const mfaLocked = (poleId) => !isAdmin() && !!myRole(poleId) && poleNeedsMfa(poleId) && !hasAal2();
+  const canView = (poleId) => {
+    if (isAdmin()) return true;
+    if (isOverview() && !S.poles.find((p) => p.id === poleId)?.hidden_from_overview) return true;
+    return !!myRole(poleId) && !mfaLocked(poleId);
+  };
+  const canEdit = (poleId) => isAdmin() || (myRole(poleId) === "responsable" && !mfaLocked(poleId));
+  const lockedPoles = () => S.poles.filter((p) => mfaLocked(p.id));
   const visiblePoles = () => S.poles.filter((p) => canView(p.id));
   const editablePoles = () => S.poles.filter((p) => canEdit(p.id));
   const poleById = (id) => S.poles.find((p) => p.id === id);
@@ -132,8 +144,7 @@
     if (isAdmin()) return "Accès complet";
     const r = myRole(poleId);
     if (r === "responsable") return "Responsable";
-    if (S.me?.global_role === "overview") return "Lecture seule";
-    if (r === "membre") return "Lecture seule";
+    if (r === "membre" || isOverview()) return "Lecture seule";
     return "";
   }
 
@@ -235,7 +246,7 @@
   async function loadAll() {
     const [poles, profiles, mems, tasks, events, posts, replies, votes, meetings, mfiles] = await Promise.all([
       sb.from("poles").select("*").order("sort").order("name"),
-      sb.from("profiles").select("id, full_name, title, global_role, is_owner"),
+      sb.from("profiles").select("id, full_name, title, global_role, is_owner, status"),
       sb.from("memberships").select("*"),
       sb.from("tasks").select("*"),
       sb.from("events").select("*"),
@@ -286,7 +297,7 @@
       }, 400);
     };
     channel = sb.channel("bde-live");
-    for (const table of ["tasks", "events", "posts", "post_replies", "post_votes", "meetings", "meeting_files"]) {
+    for (const table of ["tasks", "events", "posts", "post_replies", "post_votes", "meetings", "meeting_files", "profiles"]) {
       channel.on("postgres_changes", { event: "*", schema: "public", table }, onChange);
     }
     channel.subscribe();
@@ -332,8 +343,148 @@
     if (S.user?.id === session.user.id && S.loaded) return; // simple rafraîchissement du jeton
     S.user = session.user;
     S.view = "home";
+    await readAal();
+    // Double authentification activée sur ce compte : on demande le code avant d'entrer
+    if (S.nextAal === "aal2" && S.aal !== "aal2") {
+      S.loaded = false;
+      renderMfaChallenge();
+      return;
+    }
     await refresh();
     if (S.loaded) startRealtime();
+  }
+
+  async function readAal() {
+    try {
+      const { data } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+      S.aal = data?.currentLevel || "aal1";
+      S.nextAal = data?.nextLevel || "aal1";
+    } catch (_) {
+      S.aal = "aal1"; S.nextAal = "aal1";
+    }
+  }
+
+  async function verifiedTotp() {
+    const { data, error } = await sb.auth.mfa.listFactors();
+    if (error) throw error;
+    return (data?.totp || []).find((f) => f.status === "verified") || null;
+  }
+
+  // Écran « Code de vérification » après le mot de passe
+  function renderMfaChallenge() {
+    const code = h("input", { class: "input code-input", inputmode: "numeric", autocomplete: "one-time-code", maxlength: 6, required: true, placeholder: "123456" });
+    const err = h("div", { class: "error-text", role: "alert" });
+    const btn = h("button", { class: "btn primary", type: "submit" }, "Valider");
+    appEl.replaceChildren(h("div", { class: "auth" }, h("div", { class: "auth-card" },
+      h("div", { class: "auth-brand" }, h("div", { class: "logo" }, "🔐"), h("h2", null, "Double authentification")),
+      h("p", { style: { margin: 0, color: "var(--ink-2)" } }, "Ouvre ton appli d'authentification (Google Authenticator, Microsoft Authenticator…) et saisis le code à 6 chiffres affiché pour « BDE »."),
+      h("form", {
+        onsubmit: async (e) => {
+          e.preventDefault(); err.textContent = ""; btn.disabled = true;
+          try {
+            const factor = await verifiedTotp();
+            if (!factor) throw new Error("Aucune double authentification trouvée sur ce compte.");
+            const { error } = await sb.auth.mfa.challengeAndVerify({ factorId: factor.id, code: code.value.replace(/\D/g, "") });
+            if (error) throw error;
+            await readAal();
+            await refresh();
+            if (S.loaded) startRealtime();
+          } catch (ex) {
+            err.textContent = /invalid|expired/i.test(ex.message || "") ? "Code incorrect ou expiré. Réessaie avec le code actuel." : friendlyError(ex);
+            btn.disabled = false;
+            code.select();
+          }
+        },
+      }, h("label", { class: "field" }, "Code à 6 chiffres", code), err, btn),
+      h("button", { class: "linklike", onclick: () => sb.auth.signOut() }, "Se déconnecter"))));
+    code.focus();
+  }
+
+  // Activation de la double authentification (QR code à scanner)
+  async function mfaSetupModal() {
+    const box = h("div", { style: { display: "grid", gap: "12px" } }, h("div", { class: "muted" }, "Préparation…"));
+    const close = openModal((close) => [
+      h("h2", null, "🔐 Activer la double authentification"),
+      box,
+      h("div", { class: "modal-actions" }, h("button", { class: "btn", onclick: close }, "Annuler")),
+    ]);
+    try {
+      // Nettoie une tentative précédente non terminée
+      const { data: list } = await sb.auth.mfa.listFactors();
+      for (const f of list?.all || []) {
+        if (f.factor_type === "totp" && f.status !== "verified") await sb.auth.mfa.unenroll({ factorId: f.id });
+      }
+      if ((list?.totp || []).some((f) => f.status === "verified")) {
+        // Déjà activée : il suffit de saisir le code
+        close();
+        renderMfaChallenge();
+        return;
+      }
+      const { data, error } = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "BDE", issuer: BDE });
+      if (error) throw error;
+      const code = h("input", { class: "input code-input", inputmode: "numeric", autocomplete: "one-time-code", maxlength: 6, placeholder: "123456" });
+      const err = h("div", { class: "error-text" });
+      const ok = h("button", { class: "btn primary" }, "Activer");
+      ok.addEventListener("click", async () => {
+        err.textContent = ""; ok.disabled = true;
+        const { error: e2 } = await sb.auth.mfa.challengeAndVerify({ factorId: data.id, code: code.value.replace(/\D/g, "") });
+        ok.disabled = false;
+        if (e2) { err.textContent = "Code incorrect. Vérifie l'heure de ton téléphone et réessaie."; return; }
+        close();
+        await readAal();
+        toast("Double authentification activée ✓");
+        await refresh();
+      });
+      box.replaceChildren(
+        h("ol", { class: "steps" },
+          h("li", null, "Installe une appli d'authentification sur ton téléphone : ", h("strong", null, "Google Authenticator"), " ou ", h("strong", null, "Microsoft Authenticator"), " (gratuites)."),
+          h("li", null, "Dans l'appli, ajoute un compte en scannant ce QR code :"),
+          h("div", { class: "qr" }, h("img", { src: data.totp.qr_code, alt: "QR code de double authentification", width: 200, height: 200 })),
+          h("li", null, "Sur téléphone, sans pouvoir scanner ? Saisis cette clé à la main : ", h("code", { class: "secret" }, data.totp.secret)),
+          h("li", null, "Entre le code à 6 chiffres affiché par l'appli :")),
+        h("div", { class: "reply-form" }, code, ok),
+        err,
+        h("div", { class: "hint" }, "Ensuite, ce code te sera demandé à chaque connexion. Garde ton téléphone à portée de main."));
+      code.focus();
+    } catch (ex) {
+      box.replaceChildren(h("div", { class: "error-text" }, friendlyError(ex)));
+    }
+  }
+
+  async function mfaDisable() {
+    const ok = await confirmModal({
+      title: "Désactiver la double authentification ?",
+      body: lockedPolesIfDisabled().length ? `Tu n'auras plus accès à : ${lockedPolesIfDisabled().map((p) => p.name).join(", ")}.` : "Ton compte sera protégé par ton seul mot de passe.",
+      confirm: "Désactiver", danger: true,
+    });
+    if (!ok) return;
+    try {
+      const f = await verifiedTotp();
+      if (f) {
+        const { error } = await sb.auth.mfa.unenroll({ factorId: f.id });
+        if (error) throw error;
+      }
+      await sb.auth.refreshSession();
+      await readAal();
+      toast("Double authentification désactivée");
+      await refresh();
+    } catch (ex) {
+      toast(friendlyError(ex), true);
+    }
+  }
+  const pendingCount = () => [...S.profiles.values()].filter((p) => p.status === "pending").length;
+  const lockedPolesIfDisabled = () => S.poles.filter((p) => p.require_mfa && myRole(p.id) && !isAdmin());
+
+  // Compte en attente / refusé
+  function renderPending() {
+    const rejected = S.me.status === "rejected";
+    appEl.replaceChildren(h("div", { class: "auth" }, h("div", { class: "auth-card" },
+      h("div", { class: "auth-brand" }, h("div", { class: "logo" }, rejected ? "✕" : "⏳"), h("h2", null, rejected ? "Accès refusé" : "Compte en attente")),
+      h("p", { style: { margin: 0, color: "var(--ink-2)" } }, rejected
+        ? "Ta demande d'accès au site du BDE n'a pas été acceptée. Si c'est une erreur, contacte le président."
+        : `Bienvenue ${S.me.full_name || ""} ! Ton compte a bien été créé. Le président du ${BDE} doit maintenant le valider avant que tu puisses accéder au site.`),
+      !rejected && h("button", { class: "btn primary", onclick: async () => { await refresh(); if (S.me?.status === "approved") { toast("Compte validé ✓"); startRealtime(); } else toast("Toujours en attente de validation."); } }, "J'ai été validé, actualiser"),
+      h("button", { class: "btn", onclick: () => sb.auth.signOut() }, "Se déconnecter"))));
   }
 
   function renderAuth(mode = "login", notice = null) {
@@ -463,6 +614,7 @@
         h("button", { class: "btn", onclick: () => sb.auth.signOut() }, "Se déconnecter"))));
       return;
     }
+    if (S.me.status !== "approved") { stopRealtime(); return renderPending(); }
     // Vue devenue inaccessible (droits retirés) -> accueil
     if (S.view.startsWith("pole:") && !canView(S.view.slice(5))) S.view = "home";
     if (S.view === "admin" && !isAdmin()) S.view = "home";
@@ -508,10 +660,14 @@
         return item("pole:" + p.id, h("span", { class: "dot", style: { background: p.color } }), p.name,
           open.length > 0 && h("span", { class: "count" + (late ? " late" : "") }, open.length));
       }),
+      // Pôles protégés par double authentification, pas encore déverrouillés
+      lockedPoles().map((p) => h("button", { class: "nav-item locked", title: "Double authentification requise", onclick: () => { S.navOpen = false; mfaSetupModal(); } },
+        h("span", { class: "dot", style: { background: p.color } }), h("span", { class: "grow" }, p.name), h("span", null, "🔒"))),
       h("div", { class: "spacer" }),
       h("div", { class: "nav-label" }, "Compte"),
       item("account", h("span", { class: "nav-icon" }, "○"), "Mon compte"),
-      isAdmin() && item("admin", h("span", { class: "nav-icon" }, "⚙"), "Administration"),
+      isAdmin() && item("admin", h("span", { class: "nav-icon" }, "⚙"), "Administration",
+        isOwner() && pendingCount() > 0 && h("span", { class: "count new" }, pendingCount())),
       h("button", { class: "nav-item", onclick: () => sb.auth.signOut() }, h("span", { class: "nav-icon" }, "↩"), h("span", { class: "grow" }, "Se déconnecter")),
       h("div", { class: "me-box" },
         h("strong", null, S.me.full_name || "Sans nom"),
@@ -696,11 +852,12 @@
     if (!poles.length) {
       const n = pollsToVote().length;
       return h("div", null, head,
+        mfaNotice(),
         nextMeetingNotice(),
         n > 0 && h("div", { class: "notice row-notice" },
           h("span", null, `🗳️ ${n} sondage${n > 1 ? "s attendent" : " attend"} ton vote`),
           h("button", { class: "btn sm", onclick: () => go("discussions") }, "Voir")),
-        onboarding());
+        !lockedPoles().length && onboarding());
     }
 
     // Cartes de progression par pôle
@@ -745,7 +902,8 @@
     const activity = seesAll() ? activitySection() : null;
 
     return h("div", null, head,
-      nextMeetingNotice(),
+      mfaNotice(),
+        nextMeetingNotice(),
       pollNotice,
       cards,
       h("div", { class: "section" }, h("h2", null, "À faire"), h("div", { class: "tasks" }, agenda)),
@@ -930,6 +1088,15 @@
   };
   const fmtSize = (n) => (n == null ? "" : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} Ko` : `${(n / 1024 / 1024).toFixed(1)} Mo`);
   const BUCKET = "comptes-rendus";
+
+  function mfaNotice() {
+    const locked = lockedPoles();
+    if (!locked.length) return null;
+    return h("div", { class: "notice row-notice warn" },
+      h("span", null, "🔐 ", h("strong", null, locked.map((p) => p.name).join(", ")),
+        " demande la double authentification. Active-la (ou saisis ton code) pour y accéder."),
+      h("button", { class: "btn sm primary", onclick: mfaSetupModal }, "Continuer"));
+  }
 
   function nextMeetingNotice() {
     const m = upcomingMeetings()[0];
@@ -1478,7 +1645,7 @@
     const multi = h("input", { type: "checkbox" });
 
     // Audience
-    const choosable = seesAll() ? S.poles : visiblePoles();
+    const choosable = isAdmin() ? S.poles : visiblePoles();
     const audAll = h("input", { type: "radio", name: "aud", checked: true });
     const audPoles = h("input", { type: "radio", name: "aud", disabled: !choosable.length });
     const poleBoxes = choosable.map((p) => ({ p, el: h("input", { type: "checkbox" }) }));
@@ -1579,11 +1746,26 @@
             h("span", null, p.name),
             h("span", { class: "badge" + (m.role === "responsable" ? " accent" : "") }, m.role === "responsable" ? "Responsable" : "Lecture seule"),
             h("span", { style: { marginLeft: "auto" } }, m.role === "membre" && h("button", { class: "btn sm ghost danger", onclick: () => leavePole(p) }, "Quitter")));
-        })) : h("div", { class: "empty" }, seesAll() ? "Ton rôle te donne accès à tous les pôles." : "Tu n'es dans aucun pôle pour l'instant.")),
+        })) : h("div", { class: "empty" }, isAdmin() ? "Ton rôle te donne accès à tous les pôles."
+          : isOverview() ? "Ton rôle te donne accès à tous les pôles, sauf Présidence et Trésorerie."
+          : "Tu n'es dans aucun pôle pour l'instant.")),
 
       joinable.length > 0 && h("div", { class: "section" }, h("h2", null, "Suivre un pôle en lecture seule"),
         h("div", { class: "chips" }, joinable.map((p) => h("button", { class: "btn", onclick: () => joinPole(p) }, h("span", { class: "dot", style: { background: p.color } }), p.name))),
         h("p", { class: "hint" }, "Pour devenir responsable d'un pôle, demande à la présidence.")),
+
+      h("div", { class: "section" }, h("h2", null, "Double authentification"),
+        h("div", { class: "card", style: { padding: "18px", display: "grid", gap: "10px" } },
+          S.nextAal === "aal2"
+            ? h("div", null, h("span", { class: "badge ok" }, "✓ Activée"), " ",
+              h("span", { class: "muted" }, "Un code à 6 chiffres t'est demandé à chaque connexion."))
+            : h("div", null, h("span", { class: "badge" }, "Désactivée"), " ",
+              h("span", { class: "muted" }, lockedPolesIfDisabled().length
+                ? `Obligatoire pour accéder à : ${lockedPolesIfDisabled().map((p) => p.name).join(", ")}.`
+                : "Facultative pour ton compte, mais recommandée.")),
+          h("div", null, S.nextAal === "aal2"
+            ? h("button", { class: "btn ghost sm danger", onclick: mfaDisable }, "Désactiver")
+            : h("button", { class: "btn primary sm", onclick: mfaSetupModal }, "Activer la double authentification")))),
 
       h("div", { class: "section" }, h("button", {
         class: "btn", onclick: async () => {
@@ -1598,22 +1780,58 @@
   // ------------------------------------------------------------------
   function viewAdmin() {
     const usersBox = h("div", { class: "card table-wrap" }, h("div", { class: "activity-row muted" }, "Chargement…"));
+    const pendingBox = h("div");
     sb.rpc("admin_list_users").then(({ data, error }) => {
       if (error) return usersBox.replaceChildren(h("div", { class: "activity-row error-text" }, friendlyError(error)));
-      usersBox.replaceChildren(usersTable(data));
+      const pending = data.filter((u) => u.status === "pending");
+      const rejected = data.filter((u) => u.status === "rejected");
+      pendingBox.replaceChildren(pendingSection(pending, rejected));
+      usersBox.replaceChildren(usersTable(data.filter((u) => u.status === "approved")));
     });
 
     return h("div", null,
       h("div", { class: "page-head" }, h("div", null, h("h1", null, "Administration"),
-        h("div", { class: "sub" }, "Attribue les rôles et les pôles de chaque compte."))),
+        h("div", { class: "sub" }, "Valide les comptes, attribue les rôles et les pôles."))),
+      pendingBox,
       h("div", { class: "notice" },
         h("strong", null, "Rappel des rôles. "),
-        "Présidence : voit et modifie tout. Vue d'ensemble : voit tout, sans rien modifier (idéal pour le secrétaire général). ",
+        "Présidence : voit et modifie tout. Vue d'ensemble : voit tous les pôles sauf ceux marqués « caché à la vue d'ensemble » (Présidence, Trésorerie), sans rien modifier. ",
         "Responsable d'un pôle : crée et coche les tâches de ce pôle. Membre : lecture seule. ",
-        h("strong", null, "Seul le président (👑) peut nommer ou retirer un membre de la présidence"),
+        h("strong", null, "Seul le président (👑) valide les nouveaux comptes et nomme ou retire un membre de la présidence"),
         ", et personne ne peut modifier son profil."),
-      h("div", { class: "section" }, h("h2", null, "Comptes"), usersBox),
+      h("div", { class: "section" }, h("h2", null, "Comptes validés"), usersBox),
       h("div", { class: "section" }, h("h2", null, "Pôles"), polesAdmin()));
+  }
+
+  function pendingSection(pending, rejected) {
+    const owner = canManagePresidency(); // propriétaire (ou, sans propriétaire, la présidence)
+    const setStatus = async (u, status) => {
+      if (status === "rejected") {
+        const ok = await confirmModal({ title: `Refuser ${u.full_name || u.email} ?`, body: "Ce compte ne pourra rien voir ni rien faire sur le site. Tu pourras revenir sur ta décision.", confirm: "Refuser", danger: true });
+        if (!ok) return;
+      }
+      const { error } = await sb.from("profiles").update({ status }).eq("id", u.id);
+      if (error) return toast(friendlyError(error), true);
+      toast(status === "approved" ? `${u.full_name || u.email} est validé ✓` : "Compte refusé");
+      await refresh();
+    };
+    const row = (u, actions) => h("div", { class: "activity-row", style: { alignItems: "center", flexWrap: "wrap" } },
+      h("span", null, h("strong", null, u.full_name || "—"), " ", h("span", { class: "muted" }, u.email)),
+      h("span", { class: "muted", style: { fontSize: "12px" } }, "inscrit le " + fmtDateTime(u.created_at)),
+      h("span", { style: { marginLeft: "auto", display: "flex", gap: "6px" } }, actions));
+
+    return h("div", { style: { display: "grid", gap: "16px", marginBottom: "22px" } },
+      h("div", { class: "card pending-card" },
+        h("div", { class: "activity-row", style: { fontWeight: 600 } },
+          pending.length ? `⏳ ${pending.length} compte${pending.length > 1 ? "s" : ""} en attente de validation` : "✓ Aucun compte en attente"),
+        pending.map((u) => row(u, owner
+          ? [h("button", { class: "btn primary sm", onclick: () => setStatus(u, "approved") }, "Valider"),
+            h("button", { class: "btn ghost sm danger", onclick: () => setStatus(u, "rejected") }, "Refuser")]
+          : [h("span", { class: "muted" }, "Validation par le président")])),
+        !owner && pending.length > 0 && h("div", { class: "activity-row hint" }, "Seul le président peut valider les nouveaux comptes.")),
+      rejected.length > 0 && h("details", { class: "card" },
+        h("summary", { class: "activity-row", style: { cursor: "pointer" } }, `Comptes refusés (${rejected.length})`),
+        rejected.map((u) => row(u, owner ? [h("button", { class: "btn sm", onclick: () => setStatus(u, "approved") }, "Valider finalement")] : []))));
   }
 
   function usersTable(users) {
@@ -1701,6 +1919,8 @@
       const name = h("input", { class: "input", value: p.name, maxlength: 60 });
       const color = h("input", { type: "color", value: p.color, style: { width: "42px", height: "34px", border: 0, background: "none", padding: 0, cursor: "pointer" } });
       const open = h("input", { type: "checkbox", checked: p.open_to_members });
+      const hidden = h("input", { type: "checkbox", checked: p.hidden_from_overview, disabled: !isOwner() });
+      const mfa = h("input", { type: "checkbox", checked: p.require_mfa, disabled: !isOwner() });
       const sort = h("input", { class: "input", type: "number", value: p.sort, style: { width: "80px" } });
       const save = async (patch) => {
         const { error } = await sb.from("poles").update(patch).eq("id", p.id);
@@ -1710,12 +1930,23 @@
       name.addEventListener("change", () => name.value.trim() && save({ name: name.value.trim() }));
       color.addEventListener("change", () => save({ color: color.value }));
       open.addEventListener("change", () => save({ open_to_members: open.checked }));
+      hidden.addEventListener("change", () => save({ hidden_from_overview: hidden.checked }));
+      mfa.addEventListener("change", async () => {
+        if (!mfa.checked) {
+          const ok = await confirmModal({ title: `Retirer la double authentification de ${p.name} ?`, body: "Les membres de ce pôle y accéderont avec leur seul mot de passe.", confirm: "Retirer", danger: true });
+          if (!ok) { mfa.checked = true; return; }
+        }
+        save({ require_mfa: mfa.checked });
+      });
       sort.addEventListener("change", () => save({ sort: parseInt(sort.value, 10) || 0 }));
       const nb = S.tasks.filter((t) => t.pole_id === p.id).length;
       return h("tr", null,
         h("td", null, color),
         h("td", null, name, h("div", { class: "muted" }, `${nb} tâche${nb > 1 ? "s" : ""} · ${peopleLabel(polePeople(p.id).length)}`)),
-        h("td", null, h("label", { style: { display: "flex", gap: "8px", alignItems: "center" } }, open, "Membres autorisés")),
+        h("td", null, h("div", { class: "pole-flags" },
+          h("label", null, open, "Inscription libre (lecture)"),
+          h("label", { title: isOwner() ? null : "Réglage réservé au président" }, hidden, "Caché à la vue d'ensemble"),
+          h("label", { title: isOwner() ? null : "Réglage réservé au président" }, mfa, "Double authentification obligatoire"))),
         h("td", null, sort),
         h("td", null, h("button", {
           class: "btn sm ghost danger", onclick: async () => {
@@ -1744,9 +1975,9 @@
 
     return h("div", null,
       h("div", { class: "card table-wrap" }, h("table", null,
-        h("thead", null, h("tr", null, h("th", null, "Couleur"), h("th", null, "Nom"), h("th", null, "Inscription libre"), h("th", null, "Ordre"), h("th", null, ""))),
+        h("thead", null, h("tr", null, h("th", null, "Couleur"), h("th", null, "Nom"), h("th", null, "Accès"), h("th", null, "Ordre"), h("th", null, ""))),
         h("tbody", null, rows))),
-      h("p", { class: "hint" }, "« Membres autorisés » : n'importe quel compte peut suivre ce pôle en lecture seule. Laisse décoché pour Présidence et Trésorerie."),
+      h("p", { class: "hint" }, "« Inscription libre » : tout compte validé peut suivre ce pôle en lecture seule (laisse décoché pour Présidence et Trésorerie). « Caché à la vue d'ensemble » : le rôle vue d'ensemble (secrétaires) ne voit pas ce pôle. « Double authentification » : ses membres doivent saisir un code à 6 chiffres pour y accéder. Ces deux derniers réglages sont réservés au président."),
       h("div", { class: "inline-form" }, newColor, newName, add));
   }
 })();

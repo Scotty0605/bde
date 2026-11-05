@@ -129,6 +129,27 @@ Pour mettre à jour une base créée avant cette fonctionnalité : exécuter `su
 Pour mettre à jour une base existante : exécuter `supabase/03_reunions.sql`, puis déployer la fonction
 `calendar` (`supabase functions deploy calendar --no-verify-jwt`).
 
+## Sécurité
+
+- **Validation des comptes** : tout nouveau compte est « en attente » et ne voit strictement rien
+  (ni pôles, ni noms, ni réunions, ni discussions) tant que le président 👑 ne l'a pas validé dans
+  l'Administration. Seul le président peut valider ou refuser. Un compte refusé perd aussitôt ses accès.
+- **Vue d'ensemble restreinte** : les pôles marqués « caché à la vue d'ensemble » (par défaut
+  Présidence et Trésorerie) sont invisibles pour ce rôle, y compris leurs tâches, réunions et discussions.
+- **Double authentification** : les membres d'un pôle marqué « double authentification obligatoire »
+  (par défaut Trésorerie) n'y accèdent qu'après avoir saisi le code à 6 chiffres de leur appli
+  (Google Authenticator, Microsoft Authenticator…). Vérifié par la base (session « aal2 »).
+  Tout le monde peut l'activer pour son compte dans « Mon compte ».
+  Ces deux réglages de pôle ne peuvent être modifiés que par le président.
+- **Aucun code externe** : la bibliothèque Supabase est hébergée avec le site (`vendor/supabase.js`,
+  version 2.119.0, licence MIT) et une politique de sécurité (`Content-Security-Policy` dans
+  `index.html`) interdit au navigateur d'exécuter un script venant d'ailleurs et de communiquer avec
+  un autre serveur que le projet Supabase. **Si tu changes de projet Supabase**, mets à jour son adresse
+  dans cette balise (2 fois) en plus de `config.js`.
+
+Pour mettre à jour une base existante : exécuter `supabase/04_proprietaire.sql` puis
+`supabase/05_securite.sql`.
+
 ## Bon à savoir
 
 - **Effectifs** : le nombre de personnes affiché pour chaque pôle compte les responsables et membres,
