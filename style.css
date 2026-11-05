@@ -257,6 +257,78 @@ tr:last-child td { border-bottom: 0; }
 .activity-row:last-child { border-bottom: 0; }
 .activity-row .when { margin-left: auto; color: var(--ink-3); font-size: 12px; white-space: nowrap; }
 
+/* ---------- Discussions ---------- */
+.count.new { background: var(--accent); color: var(--accent-ink); }
+.row-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+.post {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 18px; display: grid; gap: 10px;
+}
+.post.closed { background: transparent; }
+.post-head { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.post-title { font-size: 18px; overflow-wrap: anywhere; }
+.poll { display: grid; gap: 8px; margin-top: 4px; }
+.poll-choice {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: var(--radius-sm); cursor: pointer; background: var(--surface);
+}
+.poll-choice:hover { border-color: var(--accent); }
+.poll-choice input { accent-color: var(--accent); width: 17px; height: 17px; margin: 0; }
+.results { display: grid; gap: 10px; }
+.result { display: grid; gap: 5px; }
+.result-row { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+.result.mine .result-row > span:first-child { font-weight: 600; color: var(--accent); }
+.result .progress { height: 8px; }
+.voters { font-size: 12px; color: var(--ink-3); }
+.replies { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; }
+.thread { display: grid; gap: 8px; }
+.reply { background: var(--surface-2); border-radius: var(--radius-sm); padding: 9px 12px; display: grid; gap: 3px; }
+.reply-head { display: flex; gap: 8px; align-items: baseline; font-size: 13px; }
+.reply-head .x { margin-left: auto; border: 0; background: none; color: var(--ink-3); cursor: pointer; font-size: 16px; line-height: 1; }
+.reply-head .x:hover { color: var(--danger); }
+.reply-form { display: flex; gap: 8px; align-items: flex-end; }
+textarea.input.reply-input { min-height: 42px; height: 42px; }
+textarea.input.reply-input:focus { height: 84px; }
+.radio-line { display: flex; gap: 8px; align-items: center; color: var(--ink); font-weight: 400; font-size: 14px; }
+.radio-line input { accent-color: var(--accent); margin: 0; }
+
+/* ---------- Réunions ---------- */
+.meeting {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 18px; display: grid; grid-template-columns: 64px 1fr; gap: 16px; align-items: start;
+}
+.meeting.past { background: transparent; }
+.date-box {
+  display: grid; justify-items: center; border-radius: 12px; padding: 8px 0;
+  background: var(--accent-soft); color: var(--accent); line-height: 1.1;
+}
+.meeting.past .date-box { background: var(--surface-2); color: var(--ink-2); }
+.date-box .dow, .date-box .mon { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.date-box .dnum { font-family: var(--display); font-size: 26px; font-weight: 700; }
+.meeting-body { min-width: 0; display: grid; gap: 10px; }
+.block { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
+.block-label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.block .linklike, .thread .linklike { justify-self: start; }
+.clamp {
+  max-height: 9.5em; overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent);
+}
+.file-chip {
+  border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius-sm);
+  padding: 6px 10px; cursor: pointer; font-size: 14px; text-align: left; max-width: 100%; overflow-wrap: anywhere;
+}
+.file-chip:hover { border-color: var(--accent); }
+.form-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; }
+.sync-grid { display: grid; gap: 8px; }
+.sync-grid .btn { justify-content: center; text-decoration: none; }
+@media (max-width: 520px) {
+  .meeting { grid-template-columns: 1fr; }
+  .date-box { grid-auto-flow: column; justify-content: start; gap: 6px; padding: 6px 10px; align-items: baseline; width: max-content; }
+  .date-box .dnum { font-size: 18px; }
+  .form-row { grid-template-columns: 1fr 1fr; }
+  .form-row > :first-child { grid-column: 1 / -1; }
+}
+
 /* ---------- Modale ---------- */
 .overlay {
   position: fixed; inset: 0; background: rgba(15, 15, 22, .45); display: grid; place-items: center;

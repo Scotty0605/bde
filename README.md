@@ -87,7 +87,41 @@ Les pôles (noms, couleurs, ordre, inscription libre) se modifient aussi depuis 
 
 ---
 
+## Discussions & sondages
+
+Tout compte connecté peut publier une **question** (réponses en dessous, comme des commentaires)
+ou un **sondage** (choix unique ou multiple, plus des commentaires). À la publication, l'auteur choisit :
+
+- **qui voit et peut répondre** : tout le bureau, ou seulement certains pôles (parmi ceux auxquels il a accès) ;
+- **qui voit les réponses / résultats** : tout le monde, ou seulement lui et la présidence.
+
+La présidence voit toujours tout. Les votes passent par une fonction de la base (impossible de voter
+deux fois ou de voter pour quelqu'un d'autre). L'auteur ou la présidence peut **clore** une publication
+(plus de réponses ni de votes) ou la supprimer. Un compteur signale les nouveautés dans le menu.
+
+Pour mettre à jour une base créée avant cette fonctionnalité : exécuter `supabase/02_discussions.sql`.
+
+## Réunions & comptes rendus
+
+- **Planifier** : la présidence et les responsables du pôle Secrétariat planifient toutes les réunions
+  (bureau uniquement, tout le monde, ou certains pôles). Un responsable de pôle peut planifier les réunions
+  de son pôle.
+- **Compte rendu** : texte écrit directement sur le site et/ou fichiers (Word, PDF… 20 Mo max), stockés
+  dans le bucket privé `comptes-rendus`. Seules les personnes invitées à la réunion peuvent les télécharger.
+- **Agenda du téléphone** :
+  - bouton « ＋ Mon agenda » sur chaque réunion : ajoute la réunion tout de suite (fichier .ics) ;
+  - « Synchroniser mon agenda » : abonnement personnel (iPhone, Google Agenda, Outlook) qui ajoute
+    automatiquement les réunions et événements visibles par la personne. Servi par la fonction
+    `supabase/functions/calendar` (déployée avec `verify_jwt = false`, l'accès est protégé par un
+    lien secret propre à chacun, réinitialisable).
+
+Pour mettre à jour une base existante : exécuter `supabase/03_reunions.sql`, puis déployer la fonction
+`calendar` (`supabase functions deploy calendar --no-verify-jwt`).
+
 ## Bon à savoir
+
+- **Effectifs** : le nombre de personnes affiché pour chaque pôle compte les responsables et membres,
+  sans la présidence.
 
 - **Temps réel** : quand quelqu'un coche une tâche, les autres écrans se mettent à jour tout seuls.
 - **Événements** : un événement (gala, WEI…) regroupe les tâches de plusieurs pôles. Chacun n'y voit
