@@ -1,5 +1,5 @@
 /* =====================================================================
-   BDE — Organisation · application
+   Organisation · application
    Site statique : aucune étape de build. La sécurité réelle est assurée
    par les règles de la base (supabase/schema.sql) ; les contrôles de
    droits ici ne servent qu'à afficher les bons boutons.
@@ -12,6 +12,9 @@
   const modalRoot = document.getElementById("modal-root");
   const toastRoot = document.getElementById("toast-root");
   const BDE = CFG.NOM_BDE || "BDE";
+  document.title = BDE + " — Organisation";
+  // Logo : le nom en entier s'il est court (ex. BDE), sinon son initiale
+  const LOGO = BDE.length <= 3 ? BDE.toUpperCase() : BDE.charAt(0).toUpperCase();
 
   // ------------------------------------------------------------------
   // Petit utilitaire DOM (textContent partout : pas d'injection HTML)
@@ -382,7 +385,7 @@
     const btn = h("button", { class: "btn primary", type: "submit" }, "Valider");
     appEl.replaceChildren(h("div", { class: "auth" }, h("div", { class: "auth-card" },
       h("div", { class: "auth-brand" }, h("div", { class: "logo" }, "🔐"), h("h2", null, "Double authentification")),
-      h("p", { style: { margin: 0, color: "var(--ink-2)" } }, "Ouvre ton appli d'authentification (Google Authenticator, Microsoft Authenticator…) et saisis le code à 6 chiffres affiché pour « BDE »."),
+      h("p", { style: { margin: 0, color: "var(--ink-2)" } }, "Ouvre ton appli d'authentification (Google Authenticator, Microsoft Authenticator…) et saisis le code à 6 chiffres affiché pour « " + BDE + " »."),
       h("form", {
         onsubmit: async (e) => {
           e.preventDefault(); err.textContent = ""; btn.disabled = true;
@@ -425,7 +428,7 @@
         renderMfaChallenge();
         return;
       }
-      const { data, error } = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "BDE", issuer: BDE });
+      const { data, error } = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: BDE, issuer: BDE });
       if (error) throw error;
       const code = h("input", { class: "input code-input", inputmode: "numeric", autocomplete: "one-time-code", maxlength: 6, placeholder: "123456" });
       const err = h("div", { class: "error-text" });
@@ -486,8 +489,8 @@
     appEl.replaceChildren(h("div", { class: "auth" }, h("div", { class: "auth-card" },
       h("div", { class: "auth-brand" }, h("div", { class: "logo" }, rejected ? "✕" : "⏳"), h("h2", null, rejected ? "Accès refusé" : "Compte en attente")),
       h("p", { style: { margin: 0, color: "var(--ink-2)" } }, rejected
-        ? "Ta demande d'accès au site du BDE n'a pas été acceptée. Si c'est une erreur, contacte le président."
-        : `Bienvenue ${S.me.full_name || ""} ! Ton compte a bien été créé. Le président du ${BDE} doit maintenant le valider avant que tu puisses accéder au site.`),
+        ? `Ta demande d'accès au site « ${BDE} » n'a pas été acceptée. Si c'est une erreur, contacte le président.`
+        : `Bienvenue ${S.me.full_name || ""} ! Ton compte a bien été créé. Le président doit maintenant le valider avant que tu puisses accéder au site « ${BDE} ».`),
       !rejected && h("button", { class: "btn primary", onclick: async () => { await refresh(); if (S.me?.status === "approved") { toast("Compte validé ✓"); startRealtime(); } else toast("Toujours en attente de validation."); } }, "J'ai été validé, actualiser"),
       h("button", { class: "btn", onclick: () => sb.auth.signOut() }, "Se déconnecter"))));
   }
@@ -567,7 +570,7 @@
       h("div", { class: "auth" },
         h("div", { class: "auth-card" },
           h("div", { class: "auth-brand" },
-            h("div", { class: "logo" }, BDE.slice(0, 3).toUpperCase()),
+            h("div", { class: "logo" }, LOGO),
             h("div", null, h("div", { class: "brand-name" }, BDE), h("div", { class: "muted" }, "Organisation du bureau"))),
           mode !== "forgot" && tabs,
           mode === "forgot" && h("h2", null, "Mot de passe oublié"),
@@ -651,7 +654,7 @@
     const poles = visiblePoles();
     return h("aside", { class: "sidebar" + (S.navOpen ? " open" : "") },
       h("div", { class: "brand" },
-        h("div", { class: "logo" }, BDE.slice(0, 3).toUpperCase()),
+        h("div", { class: "logo" }, LOGO),
         h("div", { class: "brand-name" }, BDE)),
       item("home", h("span", { class: "nav-icon" }, "⌂"), "Accueil"),
       item("events", h("span", { class: "nav-icon" }, "◷"), "Événements"),
@@ -1189,7 +1192,7 @@
     const esc = (s) => String(s || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
     const utc = (iso) => new Date(iso).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
     const lines = [
-      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//BDE//Organisation//FR", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+      "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//" + BDE + "//Organisation//FR", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
       "BEGIN:VEVENT",
       `UID:reunion-${m.id}@bde`,
       `DTSTAMP:${utc(new Date().toISOString())}`,
@@ -1197,7 +1200,7 @@
       `DTEND:${utc(meetingEnd(m))}`,
       `SUMMARY:${esc(m.title)}`,
       m.location && `LOCATION:${esc(m.location)}`,
-      `DESCRIPTION:${esc((m.agenda ? "Ordre du jour :\n" + m.agenda + "\n\n" : "") + "Réunion du " + BDE)}`,
+      `DESCRIPTION:${esc((m.agenda ? "Ordre du jour :\n" + m.agenda + "\n\n" : "") + "Réunion · " + BDE)}`,
       "BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${esc(m.title)}`, "TRIGGER:-PT1H", "END:VALARM",
       "END:VEVENT", "END:VCALENDAR",
     ].filter(Boolean);
@@ -1393,7 +1396,7 @@
     openModal((close) => [
       h("h2", null, "📅 Synchroniser avec ton agenda"),
       h("p", { style: { margin: 0, color: "var(--ink-2)" } },
-        "Abonne l'agenda de ton téléphone au calendrier du BDE : les réunions et événements que tu peux voir s'y ajoutent tout seuls, et les changements suivent."),
+        `Abonne l'agenda de ton téléphone au calendrier « ${BDE} » : les réunions et événements que tu peux voir s'y ajoutent tout seuls, et les changements suivent.`),
       box,
       h("div", { class: "modal-actions" }, h("button", { class: "btn", onclick: close }, "Fermer")),
     ]);
@@ -1414,7 +1417,7 @@
           }, "Copier le lien")),
         h("div", { class: "hint", style: { display: "grid", gap: "6px" } },
           h("div", null, h("strong", null, "iPhone : "), "touche le bouton puis « S'abonner ». Les mises à jour arrivent toutes les heures environ (Réglages → Calendrier → Comptes → Récupération)."),
-          h("div", null, h("strong", null, "Android : "), "touche « Google Agenda », connecte-toi puis « Ajouter ». Dans l'appli Agenda, va dans Paramètres → « BDE » et active la synchronisation. Google peut mettre quelques heures à afficher une nouvelle réunion."),
+          h("div", null, h("strong", null, "Android : "), "touche « Google Agenda », connecte-toi puis « Ajouter ». Dans l'appli Agenda, va dans Paramètres → « " + BDE + " » et active la synchronisation. Google peut mettre quelques heures à afficher une nouvelle réunion."),
           h("div", null, h("strong", null, "Outlook ou autre : "), "« Ajouter un calendrier » → « À partir d'Internet » → colle le lien."),
           h("div", null, "Besoin d'une réunion tout de suite dans ton agenda ? Utilise « ＋ Mon agenda » sur la réunion.")),
         h("div", { class: "notice", style: { fontSize: "13px" } },

@@ -9,5 +9,6 @@
 window.BDE_CONFIG = {
   SUPABASE_URL: "https://jkrfjasmhmlytchqjsbl.supabase.co",
   SUPABASE_ANON_KEY: "sb_publishable_76sI7bFjfm7tk0nI3hQdSA_EmBhHD9v",
-  NOM_BDE: "BDE",
+  // Nom affiché partout sur le site (menu, connexion, agenda…)
+  NOM_BDE: "Liste",
 };

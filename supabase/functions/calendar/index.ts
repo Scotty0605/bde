@@ -10,6 +10,8 @@
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "https://jkrfjasmhmlytchqjsbl.supabase.co";
 const KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "sb_publishable_76sI7bFjfm7tk0nI3hQdSA_EmBhHD9v";
+// Nom affiché dans l'agenda (doit correspondre à NOM_BDE dans config.js)
+const NOM = "Liste";
 
 type Meeting = { id: string; title: string; starts_at: string; ends_at: string | null; location: string | null; agenda: string | null; updated_at: string };
 type BdeEvent = { id: string; title: string; event_date: string; description: string | null };
@@ -58,11 +60,11 @@ function buildIcs(meetings: Meeting[], events: BdeEvent[]): string {
   const L: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//BDE//Organisation//FR",
+    `PRODID:-//${NOM}//Organisation//FR`,
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    "X-WR-CALNAME:BDE",
-    "X-WR-CALDESC:Réunions et événements du BDE",
+    `X-WR-CALNAME:${esc(NOM)}`,
+    `X-WR-CALDESC:${esc("Réunions et événements · " + NOM)}`,
     "X-WR-TIMEZONE:Europe/Paris",
     "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
     "X-PUBLISHED-TTL:PT1H",
@@ -81,7 +83,7 @@ function buildIcs(meetings: Meeting[], events: BdeEvent[]): string {
       `SUMMARY:${esc(m.title)}`,
     );
     if (m.location) L.push(`LOCATION:${esc(m.location)}`);
-    L.push(`DESCRIPTION:${esc((m.agenda ? "Ordre du jour :\n" + m.agenda + "\n\n" : "") + "Réunion du BDE")}`);
+    L.push(`DESCRIPTION:${esc((m.agenda ? "Ordre du jour :\n" + m.agenda + "\n\n" : "") + "Réunion · " + NOM)}`);
     L.push(
       "BEGIN:VALARM",
       "ACTION:DISPLAY",
@@ -100,7 +102,7 @@ function buildIcs(meetings: Meeting[], events: BdeEvent[]): string {
       `DTSTART;VALUE=DATE:${day(e.event_date)}`,
       `DTEND;VALUE=DATE:${nextDay(e.event_date)}`,
       `SUMMARY:${esc("🎉 " + e.title)}`,
-      `DESCRIPTION:${esc(e.description || "Événement du BDE")}`,
+      `DESCRIPTION:${esc(e.description || "Événement · " + NOM)}`,
       "TRANSP:TRANSPARENT",
       "END:VEVENT",
     );
