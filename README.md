@@ -169,3 +169,22 @@ Pour mettre à jour une base existante : exécuter `supabase/04_proprietaire.sql
 - Rappels par e-mail des tâches en retard
 - Commentaires sur les tâches
 - Pièces jointes (devis, factures) via Supabase Storage, avec les mêmes droits par pôle
+
+## QR codes dynamiques (jetons, affiches…)
+
+Le QR code imprimé contient toujours la même adresse, `https://scotty0605.github.io/bde/q/`
+(réglée dans `config.js` → `QR_BASE_URL`). La page `q/` demande à la base vers quel lien rediriger,
+compte le scan, puis envoie la personne vers ce lien.
+
+Dans **Administration › QR codes**, la présidence peut :
+
+- changer le lien de destination à tout moment (vote, Instagram, billetterie d'une soirée…) ;
+  vide = QR code inactif (la page affiche « pas encore actif ») ;
+- voir le nombre de scans (total, aujourd'hui, 7 derniers jours, graphique des 30 derniers jours) ;
+- télécharger le QR code en SVG (pour l'imprimeur) ou en PNG ;
+- créer d'autres QR codes (affiches, flyers…), qui ont chacun leur adresse `q/?c=<nom>` et leurs statistiques.
+
+⚠️ Ne change plus `QR_BASE_URL` ni l'adresse du site une fois les jetons imprimés : ce sont elles qui
+sont gravées dans les QR codes. Si le site déménage un jour, garde une page `q/` à l'ancienne adresse.
+
+Pour une base existante : exécuter `supabase/06_qr_codes.sql`.

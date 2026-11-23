@@ -1811,7 +1811,8 @@
         h("strong", null, "Seul le président (👑) valide les nouveaux comptes et nomme ou retire un membre de la présidence"),
         ", et personne ne peut modifier son profil."),
       h("div", { class: "section" }, h("h2", null, "Comptes validés"), usersBox),
-      h("div", { class: "section" }, h("h2", null, "Pôles"), polesAdmin()));
+      h("div", { class: "section" }, h("h2", null, "Pôles"), polesAdmin()),
+      h("div", { class: "section" }, h("h2", null, "QR codes"), qrAdmin()));
   }
 
   function pendingSection(pending, rejected) {
@@ -1990,5 +1991,168 @@
         h("tbody", null, rows))),
       h("p", { class: "hint" }, "« Inscription libre » : tout compte validé peut suivre ce pôle en lecture seule (laisse décoché pour Présidence et Trésorerie). « Caché à la vue d'ensemble » : le rôle vue d'ensemble (secrétaires) ne voit pas ce pôle. « Double authentification » : ses membres doivent saisir un code à 6 chiffres pour y accéder. Ces deux derniers réglages sont réservés au président."),
       h("div", { class: "inline-form" }, newColor, newName, add));
+  }
+
+  // ------------------------------------------------------------------
+  // QR codes dynamiques (Administration › QR codes)
+  // Le QR imprimé pointe toujours vers <site>/q/ ; la destination se
+  // change ici, et chaque scan est compté par la base (qr_resolve).
+  // ------------------------------------------------------------------
+  const QR_MAIN = "jetons";
+  const qrBase = () => CFG.QR_BASE_URL || new URL("q/", location.href).href;
+  const qrUrlOf = (id) => (id === QR_MAIN ? qrBase() : qrBase() + "?c=" + encodeURIComponent(id));
+
+  function qrMatrix(text) {
+    const q = qrcode(0, "M");
+    q.addData(text);
+    q.make();
+    return { n: q.getModuleCount(), dark: (r, c) => q.isDark(r, c) };
+  }
+
+  // SVG vectoriel (idéal pour l'impression), marge blanche de 4 modules
+  function qrSvgMarkup(text) {
+    const { n, dark } = qrMatrix(text);
+    const m = 4, size = n + 2 * m;
+    let d = "";
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (dark(r, c)) d += `M${c + m} ${r + m}h1v1h-1z`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size * 20}" height="${size * 20}" shape-rendering="crispEdges">` +
+      `<rect width="${size}" height="${size}" fill="#ffffff"/><path d="${d}" fill="#000000"/></svg>`;
+  }
+
+  function qrSvgElement(text, px) {
+    const doc = new DOMParser().parseFromString(qrSvgMarkup(text), "image/svg+xml");
+    const svg = document.importNode(doc.documentElement, true);
+    svg.setAttribute("width", px); svg.setAttribute("height", px);
+    return svg;
+  }
+
+  function qrPngBlob(text, px = 1200) {
+    const { n, dark } = qrMatrix(text);
+    const m = 4, size = n + 2 * m, k = Math.floor(px / size);
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size * k;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#000";
+    for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (dark(r, c)) ctx.fillRect((c + m) * k, (r + m) * k, k, k);
+    return new Promise((res) => canvas.toBlob(res, "image/png"));
+  }
+
+  function downloadBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = h("a", { href: url, download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  function qrAdmin() {
+    const box = h("div", null, h("div", { class: "empty" }, "Chargement des QR codes…"));
+    const load = async () => {
+      const [codes, stats] = await Promise.all([
+        sb.from("qr_codes").select("*").order("created_at"),
+        sb.rpc("qr_stats"),
+      ]);
+      if (codes.error || stats.error) {
+        box.replaceChildren(h("div", { class: "error-text" }, friendlyError(codes.error || stats.error)));
+        return;
+      }
+      const list = codes.data.sort((a, b) => (a.id === QR_MAIN ? -1 : b.id === QR_MAIN ? 1 : 0));
+      box.replaceChildren(
+        h("p", { class: "hint", style: { marginTop: 0 } },
+          "Le QR code imprimé ne change jamais : change seulement son lien de destination ici (vote, Instagram, billetterie d'une soirée…). ",
+          "Chaque scan est compté. Seule la présidence voit cette section."),
+        ...list.map((c) => qrCard(c, stats.data?.[c.id] || {}, load)),
+        qrNewForm(load));
+    };
+    load().catch((e) => box.replaceChildren(h("div", { class: "error-text" }, friendlyError(e))));
+    return box;
+  }
+
+  function qrCard(c, st, reload) {
+    const url = qrUrlOf(c.id);
+    const fileBase = "qr-" + c.id;
+    const target = h("input", { class: "input", type: "url", value: c.target_url || "", placeholder: "https://… (lien vers lequel le QR code renvoie)" });
+    const label = h("input", { class: "input", value: c.label, maxlength: 80, style: { fontWeight: "600" } });
+
+    const saveTarget = async () => {
+      const v = target.value.trim();
+      if (v && !/^https?:\/\/\S+$/i.test(v)) return toast("Le lien doit commencer par https:// (ou http://).", true);
+      const { error } = await sb.from("qr_codes").update({ target_url: v || null }).eq("id", c.id);
+      if (error) return toast(friendlyError(error), true);
+      toast(v ? "Lien du QR code mis à jour ✓" : "QR code désactivé");
+      reload();
+    };
+    target.addEventListener("keydown", (e) => { if (e.key === "Enter") saveTarget(); });
+    label.addEventListener("change", async () => {
+      const v = label.value.trim(); if (!v) return;
+      const { error } = await sb.from("qr_codes").update({ label: v }).eq("id", c.id);
+      if (error) return toast(friendlyError(error), true);
+      toast("Nom mis à jour");
+    });
+
+    // 30 derniers jours (heure de Paris)
+    const counts = new Map((st.days || []).map((d) => [d.d, d.n]));
+    const days = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const key = d.toLocaleDateString("sv-SE", { timeZone: "Europe/Paris" }); // AAAA-MM-JJ
+      days.push({ key, n: counts.get(key) || 0 });
+    }
+    const max = Math.max(1, ...days.map((d) => d.n));
+    const chart = h("div", { class: "qr-chart", title: "Scans par jour, 30 derniers jours" },
+      days.map((d) => h("span", { title: `${fmtDate(d.key)} : ${d.n} scan${d.n > 1 ? "s" : ""}`, style: { height: Math.max(2, Math.round((d.n / max) * 100)) + "%" }, class: d.n ? "" : "zero" })));
+
+    const stat = (n, l) => h("div", { class: "qr-stat" }, h("strong", null, String(n ?? 0)), h("span", { class: "muted" }, l));
+
+    return h("div", { class: "card qr-card" },
+      h("div", { class: "qr-side" },
+        h("div", { class: "qr" }, qrSvgElement(url, 150)),
+        h("div", { class: "qr-dl" },
+          h("button", { class: "btn sm", onclick: () => downloadBlob(new Blob([qrSvgMarkup(url)], { type: "image/svg+xml" }), fileBase + ".svg") }, "⬇ SVG (impression)"),
+          h("button", { class: "btn sm", onclick: async () => downloadBlob(await qrPngBlob(url), fileBase + ".png") }, "⬇ PNG"))),
+      h("div", { class: "qr-main" },
+        h("div", { class: "row", style: { gap: "8px", alignItems: "center" } }, label,
+          c.target_url ? h("span", { class: "badge ok" }, "Actif") : h("span", { class: "badge" }, "Inactif")),
+        h("label", { class: "field" }, "Lien de destination",
+          h("div", { class: "qr-target" }, target, h("button", { class: "btn primary sm", onclick: saveTarget }, "Enregistrer"))),
+        c.updated_by && h("div", { class: "hint" }, `Modifié par ${nameOf(c.updated_by)}, le ${fmtDateTime(c.updated_at)}`),
+        h("div", { class: "hint" }, "Adresse contenue dans le QR code : ",
+          h("code", null, url), " ",
+          h("button", { class: "linklike", onclick: async () => {
+            try { await navigator.clipboard.writeText(url); toast("Adresse copiée"); } catch { toast("Copie impossible", true); }
+          } }, "Copier"),
+          " · ", h("a", { href: url, target: "_blank", rel: "noopener" }, "Tester"), " (compte comme un scan)"),
+        h("div", { class: "qr-stats" },
+          stat(st.total, "scans au total"), stat(st.today, "aujourd'hui"), stat(st.week, "7 derniers jours"),
+          h("div", { class: "qr-stat last" }, h("strong", null, st.last ? fmtDateTime(st.last) : "—"), h("span", { class: "muted" }, "dernier scan"))),
+        chart,
+        h("div", { class: "qr-actions" },
+          h("button", { class: "btn sm ghost", onclick: async () => {
+            const ok = await confirmModal({ title: `Remettre à zéro les scans de « ${c.label} » ?`, body: "Le compteur et l'historique des scans de ce QR code seront effacés. Le lien ne change pas.", confirm: "Remettre à zéro", danger: true });
+            if (!ok) return;
+            const { error } = await sb.from("qr_scans").delete().eq("qr_id", c.id);
+            if (error) return toast(friendlyError(error), true);
+            toast("Compteur remis à zéro"); reload();
+          } }, "Remettre le compteur à zéro"),
+          c.id !== QR_MAIN && h("button", { class: "btn sm ghost danger", onclick: async () => {
+            const ok = await confirmModal({ title: `Supprimer le QR code « ${c.label} » ?`, body: "Les QR codes déjà imprimés avec cette adresse ne mèneront plus nulle part.", confirm: "Supprimer", danger: true });
+            if (!ok) return;
+            const { error } = await sb.from("qr_codes").delete().eq("id", c.id);
+            if (error) return toast(friendlyError(error), true);
+            toast("QR code supprimé"); reload();
+          } }, "Supprimer"))));
+  }
+
+  function qrNewForm(reload) {
+    const name = h("input", { class: "input", placeholder: "Nouveau QR code (ex. Affiches soirée casino)", maxlength: 80, style: { minWidth: "260px" } });
+    const add = h("button", { class: "btn primary sm", onclick: async () => {
+      const n = name.value.trim(); if (!n) return;
+      let id = slugify(n).slice(0, 30);
+      if (id === QR_MAIN || id.startsWith("pole-")) id = "qr-" + Date.now().toString(36);
+      const { error } = await sb.from("qr_codes").insert({ id, label: n, target_url: null });
+      if (error) return toast(/duplicate key/i.test(error.message) ? "Un QR code porte déjà ce nom." : friendlyError(error), true);
+      toast("QR code créé"); reload();
+    } }, "Créer un QR code");
+    return h("div", { class: "inline-form", style: { marginTop: "12px" } }, name, add);
   }
 })();

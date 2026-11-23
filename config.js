@@ -11,4 +11,8 @@ window.BDE_CONFIG = {
   SUPABASE_ANON_KEY: "sb_publishable_76sI7bFjfm7tk0nI3hQdSA_EmBhHD9v",
   // Nom affiché partout sur le site (menu, connexion, agenda…)
   NOM_BDE: "Liste",
+  // Adresse imprimée dans les QR codes (jetons, affiches…). Ne la change plus
+  // une fois les QR codes imprimés : seule la destination se modifie, depuis
+  // Administration › QR codes.
+  QR_BASE_URL: "https://scotty0605.github.io/bde/q/",
 };

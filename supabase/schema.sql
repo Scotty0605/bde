@@ -442,15 +442,15 @@ end $$;
 -- ---------------------------------------------------------------------
 
 insert into public.poles (id, name, color, sort, open_to_members) values
-  ('presidence',                'Présidence',                '#5b5bd6', 10, false),
-  ('secretariat',               'Secrétariat',               '#0e9f8e', 20, true),
-  ('tresorerie',                'Trésorerie',                '#d97706', 30, false),
-  ('communication',             'Communication',             '#db2777', 40, true),
-  ('logistique',                'Logistique',                '#65a30d', 50, true),
-  ('sponsors',                  'Sponsors',                  '#2563eb', 60, true),
-  ('animation',                 'Animation',                 '#7c3aed', 70, true),
-  ('prepa',                     'Prépa',                     '#0891b2', 80, true),
-  ('relations-internationales', 'Relations internationales', '#e11d48', 90, true)
+  ('presidence',                'Présidence',                '#FFC000', 10, false),
+  ('secretariat',               'Secrétariat',               '#8ED973', 20, true),
+  ('tresorerie',                'Trésorerie',                '#FFFF00', 30, false),
+  ('communication',             'Communication',             '#F2CFEE', 40, true),
+  ('logistique',                'Logistique',                '#C04F15', 50, true),
+  ('sponsors',                  'Sponsors',                  '#FF0000', 60, true),
+  ('animation',                 'Animation',                 '#CAEEFB', 70, true),
+  ('prepa',                     'Prépa',                     '#FBE3D6', 80, true),
+  ('relations-internationales', 'Relations internationales', '#B4E5A2', 90, true)
 on conflict (id) do nothing;
 
 
